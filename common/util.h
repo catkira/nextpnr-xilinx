@@ -57,8 +57,35 @@ std::string str_or_default(const std::unordered_map<KeyType, Property> &ct, cons
     auto found = ct.find(key);
     if (found == ct.end())
         return def;
-    else
-        return found->second.as_string();
+    const Property &prop = found->second;
+    if (prop.is_string)
+        return prop.as_string();
+    // A string-valued parameter that arrived as bits: a VHDL boolean generic
+    // (GHDL writes FALSE/TRUE as one bit), a string some frontends emit as
+    // its ASCII bits, or an integer for a string-typed parameter (BUFR_DIVIDE).
+    if (!prop.is_fully_def())
+        return def;
+    if (prop.size() == 1)
+        return prop.as_bool() ? "TRUE" : "FALSE";
+    if (prop.size() % 8 == 0) {
+        std::string s;
+        bool printable = true;
+        for (int i = int(prop.size()) - 8; i >= 0; i -= 8) {
+            int c = 0;
+            for (int j = 7; j >= 0; j--)
+                c = (c << 1) | (prop.str.at(i + j) == Property::S1 ? 1 : 0);
+            if (c == 0 && s.empty())
+                continue; // leading NUL padding
+            if (c < 0x20 || c > 0x7e) {
+                printable = false;
+                break;
+            }
+            s += char(c);
+        }
+        if (printable && !s.empty())
+            return s;
+    }
+    return std::to_string(prop.as_int64());
 };
 
 // Get a value from a map-style container, converting to int, and returning
