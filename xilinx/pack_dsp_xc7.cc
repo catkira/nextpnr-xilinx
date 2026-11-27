@@ -159,9 +159,17 @@ void XC7Packer::pack_dsps()
     }
 
     for (auto root : dsp_roots) {
-        root->constr_abs_z = true;
-        root->constr_z = BEL_LOWER_DSP;
         walk_dsp(root, root, BEL_UPPER_DSP);
+        // Only the root of a cascade has to sit in the lower DSP of its tile
+        // (its children follow upwards).  A stand-alone DSP may use either
+        // half: pinning it too leaves just one bel per tile, so any design
+        // with more stand-alone DSPs than DSP tiles (136 of 158 DSPs on an
+        // xc7z020 with 110 tiles) became unplaceable ("Unable to find legal
+        // placement for cell ...").
+        if (!root->constr_children.empty()) {
+            root->constr_abs_z = true;
+            root->constr_z = BEL_LOWER_DSP;
+        }
     }
 }
 
