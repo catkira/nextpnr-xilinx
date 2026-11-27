@@ -117,6 +117,52 @@ void XilinxPacker::split_carry4s()
 //
 // Set XC7_LEGACY_CARRY4_SPLIT=1 in the environment to fall back to the
 // historical split-and-repack path (kept for emergency comparison).
+// The chains are laid out with absolute z (root at BEL_CARRY4, its LUTs and FFs
+// at (bit << 4) | type).  A CLB tile holds two slices, the second one's bels at
+// z + 0x40, so absolute z confines every carry chain to the first slice of its
+// tile: half the CARRY4 sites, which a carry-heavy design runs out of during
+// legalisation ("Unable to find legal placement for cell ...carry4").  Keep the
+// same layout relative to the root instead, so a chain may use either slice.
+// BEL-pinned (imported) chains keep their absolute constraints.
+void XC7Packer::relativise_carry_chains()
+{
+    int relativised = 0;
+    std::function<void(CellInfo *, int)> relativise = [&](CellInfo *parent, int parent_z) {
+        for (auto child : parent->constr_children) {
+            int child_z;
+            if (child->constr_abs_z && child->constr_z != child->UNCONSTR) {
+                child_z = child->constr_z;
+                child->constr_abs_z = false;
+                child->constr_z = child_z - parent_z;
+            } else if (child->constr_z != child->UNCONSTR) {
+                child_z = parent_z + child->constr_z; // already relative: unchanged
+            } else {
+                continue;
+            }
+            relativise(child, child_z);
+        }
+    };
+    std::function<bool(const CellInfo *)> cluster_pinned = [&](const CellInfo *c) {
+        if (c->attrs.count(ctx->id("BEL")))
+            return true;
+        for (auto child : c->constr_children)
+            if (cluster_pinned(child))
+                return true;
+        return false;
+    };
+    for (auto cell : sorted(ctx->cells)) {
+        CellInfo *ci = cell.second;
+        if (ci->type != ctx->id("CARRY4") || ci->constr_parent != nullptr || !ci->constr_abs_z ||
+            ci->constr_z != BEL_CARRY4 || cluster_pinned(ci))
+            continue;
+        relativise(ci, BEL_CARRY4);
+        ci->constr_abs_z = false;
+        ci->constr_z = ci->UNCONSTR;
+        relativised++;
+    }
+    log_info("   Made %d carry chain(s) slice-relative\n", relativised);
+}
+
 void XC7Packer::pack_carries_atomic()
 {
     log_info("Packing carries (atomic CARRY4)..\n");
@@ -1015,6 +1061,7 @@ void XC7Packer::pack_carries()
     generic_xform(softlogic_rules, false);
     log_info("   Blasted %d non-chain MUXCYs and %d non-chain XORCYs to soft logic\n", remaining_muxcy,
              remaining_xorcy);
+
 
     // Finally, use generic_xform to remove the [] from bus ports; and set up the logical-physical mapping for
     // RapidWright

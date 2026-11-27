@@ -215,6 +215,7 @@ struct XC7Packer : public XilinxPacker
     void pack_carries_atomic();   // Vivado-compatible direct CARRY4 packer
     // Carry-O fabric-fanout relocation (ALU chains: O and CO both tapped)
     void relocate_carry_o_fabric();
+    void relativise_carry_chains();
 
     // IO
     CellInfo *insert_ibuf(IdString name, IdString type, NetInfo *i, NetInfo *o);

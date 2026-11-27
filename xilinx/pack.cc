@@ -1420,6 +1420,7 @@ bool Arch::pack()
         packer.pack_muxfs();
         packer.pack_carries();
         packer.relocate_carry_o_fabric();
+        packer.relativise_carry_chains();
         packer.pack_srls();
         packer.pack_luts(lut6_2_pairs);
         packer.pack_dram();
